@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pick Your Player</title>
+<!-- The avatar picker: the game's Create Player art, in a browser. A player picks their look and downloads it;
+     the file goes back into the game with Tools ▸ Beach Soccer ▸ Avatar Picker ▸ Import Picks. parts.js and parts/
+     are written by Tools ▸ Beach Soccer ▸ Avatar Picker ▸ Export Parts. -->
+<style>
+  :root { --bg:#0e1a2b; --panel:#16263d; --block:#203552; --sel:#f2b33d; --text:#f4f1e8; --muted:#9fb0c6; --primary:#e0532f; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#e9eef5; --panel:#ffffff; --block:#dfe7f1; --text:#13223a; --muted:#56657a; } }
+  :root[data-theme="dark"] { --bg:#0e1a2b; --panel:#16263d; --block:#203552; --text:#f4f1e8; --muted:#9fb0c6; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; gap:12px; flex-wrap:wrap; }
+  h1 { margin:0; font-size:20px; letter-spacing:.04em; text-transform:uppercase; }
+  .lang button { background:var(--block); color:var(--text); border:0; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:600; }
+  .lang button.on { background:var(--sel); color:#111; }
+  main { display:grid; grid-template-columns: minmax(260px, 420px) 1fr; gap:16px; padding:0 16px 24px; max-width:1200px; margin:0 auto; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border-radius:14px; padding:14px; }
+  #preview { width:100%; aspect-ratio:1; display:block; border-radius:10px; background:radial-gradient(circle at 50% 35%, #3b6aa0, #13233c); }
+  .who { margin-top:10px; text-align:center; }
+  .who .name { font-size:22px; font-weight:800; text-transform:uppercase; letter-spacing:.03em; }
+  .who .sub { color:var(--muted); }
+  .sex { display:flex; gap:8px; margin-top:12px; }
+  .sex button, .tabs button, .primary { flex:1; border:0; border-radius:8px; padding:10px; font-weight:700; cursor:pointer; background:var(--block); color:var(--text); text-transform:uppercase; letter-spacing:.03em; }
+  .sex button.on, .tabs button.on { background:var(--sel); color:#111; }
+  .primary { background:var(--primary); color:#fff; width:100%; margin-top:12px; padding:14px; font-size:16px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .tabs button { flex:0 0 auto; padding:8px 12px; font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(88px, 1fr)); gap:8px; }
+  .opt { position:relative; border-radius:10px; overflow:hidden; cursor:pointer; background:var(--block); border:3px solid transparent; }
+  .opt.on { border-color:var(--sel); }
+  .opt.off { opacity:.3; cursor:default; pointer-events:none; }
+  .group { grid-column:1 / -1; margin-top:8px; color:var(--muted); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+  .opt canvas { width:100%; aspect-ratio:1; display:block; }
+  .opt .lab { position:absolute; left:0; right:0; bottom:0; font-size:11px; font-weight:700; text-align:center; background:rgba(0,0,0,.55); color:#fff; padding:2px; text-transform:uppercase; }
+  .swatches { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .sw { width:40px; height:40px; border-radius:50%; cursor:pointer; border:3px solid transparent; box-shadow:0 0 0 1px rgba(0,0,0,.25) inset; }
+  .sw.on { border-color:var(--sel); }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid rgba(127,127,127,.18); }
+  .row label { color:var(--muted); font-weight:600; text-transform:uppercase; font-size:12px; letter-spacing:.04em; }
+  .row input, .row select { background:var(--block); color:var(--text); border:0; border-radius:6px; padding:8px; font:inherit; min-width:0; max-width:60%; }
+  .step { display:flex; align-items:center; gap:8px; }
+  .step button { width:36px; height:36px; border:0; border-radius:8px; background:var(--block); color:var(--text); font-size:20px; cursor:pointer; }
+  .step span { min-width:70px; text-align:center; font-weight:700; }
+  .note { color:var(--muted); font-size:13px; margin-top:10px; }
+  .missing { padding:24px; text-align:center; color:var(--muted); }
+  .loading { grid-column:1 / -1; padding:40px 24px; text-align:center; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+  .loading .bar { height:8px; border-radius:4px; background:var(--block); margin:16px auto 0; max-width:320px; overflow:hidden; }
+  .loading .bar i { display:block; height:100%; width:0; background:var(--sel); transition:width .2s; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Pick your player</h1>
+  <div class="lang"><button data-l="en" class="on">EN</button> <button data-l="es">ES</button></div>
+</header>
+<main id="app"><div class="card loading"><div>Loading players… · Cargando jugadores…</div><div class="bar"><i id="bar"></i></div></div></main>
+<script>
+// parts.js is big (every picture's inside it): fetched with a progress bar (its first line says how many bytes
+// it is), then run. Opened from the disk (file://: no fetch) it's a plain script tag.
+function loadParts(start) {
+  const bar = document.getElementById("bar");
+  const tag = () => { const s = document.createElement("script"); s.src = "parts.js"; s.onload = s.onerror = start; document.body.appendChild(s); };
+  if (location.protocol === "file:" || !window.fetch || !window.ReadableStream) return tag();
+  fetch("parts.js").then(async r => {
+    if (!r.ok || !r.body) throw new Error("parts.js " + r.status);
+    const reader = r.body.getReader(), chunks = [];
+    let got = 0, size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!chunks.length) { const m = new TextDecoder().decode(value.slice(0, 64)).match(/size: (\d+)/); if (m) size = +m[1]; }
+      chunks.push(value); got += value.length;
+      if (size) bar.style.width = Math.min(100, 100 * got / size) + "%";
+    }
+    const s = document.createElement("script");
+    s.src = URL.createObjectURL(new Blob(chunks, { type: "text/javascript" }));
+    s.onload = s.onerror = start;
+    document.body.appendChild(s);
+  }).catch(tag);
+}
+
+loadParts(function () {
+  const app = document.getElementById("app");
+  if (!window.PARTS) { app.innerHTML = '<div class="card missing">parts.js is missing — in Unity run Tools ▸ Beach Soccer ▸ Avatar Picker ▸ Export Parts.</div>'; return; }
+  const P = window.PARTS;
+
+  // ---------- words ----------
+  const W = {
+    en: { title:"Pick your player", male:"Man", female:"Woman", skin:"Skin", eyes:"Eyes", brows:"Brows", nose:"Nose", mouth:"Mouth", hair:"Hair", beard:"Beard",
+          shirt:"Shirt", crest:"Crest", number:"Number", info:"About you", shaved:"Shaved", moreEyes:"More eyes", colour2:"Second colour", none:"None", stubble:"Stubble", moustache:"Moustache", goatee:"Goatee", full:"Full",
+          young:"Young", a35:"35", a50:"50", a70:"70", name:"Name", nickname:"Nickname", country:"Country", foot:"Foot", left:"Left", right:"Right",
+          height:"Height", weight:"Weight", born:"Born", style:"Style", white:"White", gold:"Gold", black:"Black", download:"Download my player",
+          noteDl:"Send the downloaded file back to us — that's your player in the game.", needName:"Your name first, please." },
+    es: { title:"Elige tu jugador", male:"Hombre", female:"Mujer", skin:"Piel", eyes:"Ojos", brows:"Cejas", nose:"Nariz", mouth:"Boca", hair:"Pelo", beard:"Barba",
+          shirt:"Camiseta", crest:"Escudo", number:"Dorsal", info:"Sobre ti", shaved:"Rapado", moreEyes:"Más ojos", colour2:"Segundo color", none:"Nada", stubble:"De 3 días", moustache:"Bigote", goatee:"Perilla", full:"Barba",
+          young:"Joven", a35:"35", a50:"50", a70:"70", name:"Nombre", nickname:"Apodo", country:"País", foot:"Pie", left:"Izquierdo", right:"Derecho",
+          height:"Altura", weight:"Peso", born:"Nacimiento", style:"Estilo", white:"Blanco", gold:"Oro", black:"Negro", download:"Descargar mi jugador",
+          noteDl:"Mándanos el archivo descargado: ese es tu jugador en el juego.", needName:"Primero tu nombre, por favor." },
+  };
+  let lang = (navigator.language || "en").toLowerCase().startsWith("es") ? "es" : "en";
+  const t = k => W[lang][k] || k;
+
+  // ---------- the player (CustomPlayer's fields: the game reads this file) ----------
+  const me = JSON.parse(JSON.stringify(P.defaults));
+  let tab = (location.hash.match(/tab=(\w+)/) || [])[1] || "skin"; // #tab=hair opens on that tab
+
+  // ---------- images ----------
+  const cache = {};
+  function img(src) {
+    if (!src) return null;
+    if (cache[src]) return cache[src];
+    const i = new Image(); i.src = src; i.onload = () => redraw(); cache[src] = i; return i;
+  }
+  const ready = i => i && i.complete && i.naturalWidth > 0;
+
+  // The shirt in any colours (the game's PortraitRecolor): its regions come from the game (red: the body, green: the
+  // second region — sleeves, trim, stripes, band), each repainted in its colour with its shading kept.
+  const shirtCache = {};
+  function shirt(src, regions, hexBody, hexSecond) {
+    const key = src + hexBody + (hexSecond || "");
+    if (shirtCache[key]) return shirtCache[key];
+    const base = img(src), map = img(regions);
+    if (!ready(base) || !ready(map)) return null;
+    const c = document.createElement("canvas"); c.width = base.naturalWidth; c.height = base.naturalHeight;
+    const g = c.getContext("2d"); g.drawImage(map, 0, 0);
+    const lab = g.getImageData(0, 0, c.width, c.height).data;
+    g.clearRect(0, 0, c.width, c.height); g.drawImage(base, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+    const region = j => lab[j * 4 + 3] < 128 ? 0 : lab[j * 4] > 128 ? 1 : lab[j * 4 + 1] > 128 ? 2 : 0;
+    const paint = (which, hx) => {
+      let sS = 0, sV = 0, n = 0;
+      for (let i = 0, j = 0; i < px.length; i += 4, j++) { if (region(j) !== which) continue; const [, s, v] = hsv(px[i], px[i + 1], px[i + 2]); sS += s; sV += v; n++; }
+      if (!n) return;
+      const sB = sS / n, vB = Math.max(.05, sV / n), grey = sB < .15 || vB < .25; // white or black as drawn (a black's tint is noise): no saturation to keep a ratio of
+      const shade = vB < .25 ? .12 : 1; // drawn near black, its shading's mostly noise (compression blocks): keep only a trace
+      const [th, ts, tv] = hsv(parseInt(hx.substr(1, 2), 16), parseInt(hx.substr(3, 2), 16), parseInt(hx.substr(5, 2), 16));
+      for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+        if (region(j) !== which) continue;
+        const [, s, v] = hsv(px[i], px[i + 1], px[i + 2]);
+        const [r, gg, b] = rgb(th, grey ? ts : Math.min(1, ts * s / sB), Math.min(1, tv * (1 + ((shade < 1 ? Math.min(1.4, Math.max(.6, v / vB)) : v / vB) - 1) * shade))); px[i] = r; px[i + 1] = gg; px[i + 2] = b;
+      }
+    };
+    paint(1, hexBody); if (hexSecond) paint(2, hexSecond);
+    g.putImageData(d, 0, 0); shirtCache[key] = c; return c;
+  }
+  function hsv(r, g, b) { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; let h = 0;
+    if (d) { if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h /= 6; if (h < 0) h += 1; } return [h, mx ? d / mx : 0, mx]; }
+  function rgb(h, s, v) { const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), u = v * (1 - (1 - f) * s);
+    const [r, g, b] = [[v, u, p], [q, v, p], [p, v, u], [p, q, v], [u, p, v], [v, p, q]][((i % 6) + 6) % 6]; return [r * 255, g * 255, b * 255]; }
+  const hex = c => "#" + [c.r, c.g, c.b].map(x => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+  const col = h => ({ r: parseInt(h.substr(1, 2), 16) / 255, g: parseInt(h.substr(3, 2), 16) / 255, b: parseInt(h.substr(5, 2), 16) / 255, a: 1 });
+
+  // ---------- the portrait (CustomPlayer.Layers, bottom first) ----------
+  function beardFile(style, colour) { let black = null; for (const b of P.beards) { if (b.style !== style) continue; if (b.colour === colour) return b.file; if (b.colour === "negro") black = b.file; } return black; }
+  function layers(c) {
+    const f = c.female, L = [];
+    const skins = f ? P.skinsFemale : P.skinsMale, bald = f ? P.baldFemale : P.baldMale, ages = f ? P.agesFemale : P.agesMale, shirts = f ? P.shirtsFemale : P.shirtsMale;
+    L.push(img(c.hair < 0 && bald && bald[c.skin] ? bald[c.skin] : skins[c.skin]));
+    if (c.age > 0 && ages && ages[c.age - 1]) L.push(img(ages[c.age - 1]));
+    const regions = f ? P.shirtRegionsFemale : P.shirtRegionsMale;
+    L.push(shirt(shirts[c.shirt], regions[c.shirt], hex(c.shirtColor), c.shirtColor2 && c.shirtColor2.a > 0 ? hex(c.shirtColor2) : null));
+    L.push(img(P.eyes[c.eyes] && P.eyes[c.eyes].file));
+    L.push(img(P.noses[c.nose]));
+    const beard = c.beard >= 0 && !f ? img(beardFile(c.beard + 1, c.hairColour)) : null;
+    if (beard) L.push({ im: beard, from: BEARD_FAR_SIDE, to: 1 }); // the near side, by the ear: under the hair
+    L.push(img(P.brows[c.brows] && P.brows[c.brows].file));
+    if (c.hair >= 0) {
+      L.push(img(P.hair[c.hair].file));
+      const ears = P.earLines && P.earLines[f ? "female" : "male"];
+      if (ears && ears[c.hair]) L.push(img(ears[c.hair])); // the ear's line where long hair passes behind it
+    }
+    if (beard) L.push({ im: beard, from: 0, to: BEARD_FAR_SIDE }); // the far side: over long hair, which hangs behind the jaw
+    L.push(img(P.mouths[c.mouth]));
+    if (c.crest >= 0) L.push(img(P.crests[c.crest]));
+    const nums = P.numbers[c.numberStyle] || P.numbers[1];
+    if (nums && nums[c.number]) L.push(img(nums[c.number]));
+    return L;
+  }
+  const BEARD_FAR_SIDE = 250 / 512; // as PortraitFx.BeardFarSide: the faces look left, the near side's past this
+  function paint(canvas, c, at, zoom) {
+    const g = canvas.getContext("2d"), S = canvas.width;
+    g.clearRect(0, 0, S, S);
+    g.save();
+    if (at) { const z = zoom || 1; g.translate(S / 2, S / 2); g.scale(z, z); g.translate(-at[0] * S, -(1 - at[1]) * S); }
+    for (const l of layers(c)) {
+      if (l && l.im) { if (ready(l.im)) { g.save(); g.beginPath(); g.rect(l.from * S, 0, (l.to - l.from) * S, S); g.clip(); g.drawImage(l.im, 0, 0, S, S); g.restore(); } } // part of a layer
+      else if (l && (l instanceof HTMLCanvasElement || ready(l))) g.drawImage(l, 0, 0, S, S);
+    }
+    g.restore();
+  }
+
+  // ---------- the rules Create Player has ----------
+  const DEFAULT_HAIR = 10, DEFAULT_FEMALE_HAIR = 9;
+  const styles = () => [...new Set(P.hair.map(h => h.style))];
+  const hairIndex = (style, colour) => { let first = -1; P.hair.forEach((h, i) => { if (h.style !== style) return; if (first < 0) first = i; }); const m = P.hair.findIndex(h => h.style === style && h.colour === colour); return m >= 0 ? m : first; };
+  const browIndex = (style, colour) => { const m = P.brows.findIndex(b => b.style === style && b.colour === colour); return m >= 0 ? m : P.brows.findIndex(b => b.style === style); };
+  const browColourFor = c => ({ negro: "negro", marron: "marron", rubio: "rubio", rojo: "rojo", gris: "rubio", blanco: "rubio" })[c] || null;
+  function setFemale(f) {
+    if (me.female === f) return; me.female = f;
+    const st = me.hair >= 0 ? P.hair[me.hair].style : -1;
+    if (f && (me.hair < 0 || st === DEFAULT_HAIR)) me.hair = hairIndex(DEFAULT_FEMALE_HAIR, me.hairColour);
+    else if (!f && st === DEFAULT_FEMALE_HAIR) me.hair = hairIndex(DEFAULT_HAIR, me.hairColour);
+    if (f) { me.beard = -1; if (tab === "beard") tab = "hair"; }
+    if (me.eyes >= 0 && womensEyes(me.eyes) !== f) me.eyes = defaultEyes(f, P.eyes[me.eyes].colour); // the same colour in your own set
+    me.skin = Math.min(me.skin, (f ? P.skinsFemale : P.skinsMale).length - 1);
+    me.shirt = Math.min(me.shirt, (f ? P.shirtsFemale : P.shirtsMale).length - 1);
+    render();
+  }
+  // The eyes: the women's have lashes or liner (as CustomPlayer.WomenEyeStyles); each body sees its own set first.
+  const WOMEN_EYES = [4, 6, 7], DEFAULT_EYES = { men: 8, women: 4 };
+  const womensEyes = i => WOMEN_EYES.includes(P.eyes[i].style);
+  const eyeSet = womens => P.eyes.map((e, i) => i).filter(i => womensEyes(i) === womens);
+  const defaultEyes = (female, colour) => {
+    const st = female ? DEFAULT_EYES.women : DEFAULT_EYES.men;
+    const m = P.eyes.findIndex(e => e.style === st && e.colour === colour);
+    return m >= 0 ? m : P.eyes.findIndex(e => e.style === st);
+  };
+  const comesIn = (style, colour) => P.hair.some(h => h.style === style && h.colour === colour); // the fun colours are one cut each
+  function setHairColour(c) {
+    me.hairColour = c;
+    if (me.hair >= 0) { // the cut in the new colour — or, when it doesn't come in it, a cut that does (the default first)
+      let st = P.hair[me.hair].style;
+      if (!comesIn(st, c)) { const pref = me.female ? DEFAULT_FEMALE_HAIR : DEFAULT_HAIR; st = comesIn(pref, c) ? pref : (styles().find(s => comesIn(s, c)) ?? st); }
+      me.hair = hairIndex(st, c);
+    }
+    const b = browColourFor(c); if (b) me.brows = browIndex(P.brows[me.brows].style, b); }
+
+  // ---------- the page ----------
+  const AT = { face: [.45, .5], eyes: [.455, .52], brows: [.45, .56], nose: [.436, .475], mouth: [.45, .41], hair: [.48, .62], shirt: [.5, .17], crest: [.565, .147] };
+  const thumbs = [];
+  function option(grid, apply, on, label, at, zoom, off) {
+    const d = document.createElement("div"); d.className = "opt" + (on ? " on" : "") + (off ? " off" : "");
+    const cv = document.createElement("canvas"); cv.width = cv.height = 176; d.appendChild(cv);
+    if (label) { const l = document.createElement("div"); l.className = "lab"; l.textContent = label; d.appendChild(l); }
+    const c = JSON.parse(JSON.stringify(me)); apply(c);
+    thumbs.push(() => paint(cv, c, at, zoom));
+    d.onclick = () => { apply(me); render(); };
+    grid.appendChild(d);
+  }
+  function swatches(parent, list, on, pick) {
+    const s = document.createElement("div"); s.className = "swatches";
+    list.forEach((h, i) => { const b = document.createElement("div"); b.className = "sw" + (on(i) ? " on" : ""); b.style.background = h; b.onclick = () => { pick(i); render(); }; s.appendChild(b); });
+    parent.appendChild(s);
+  }
+  function row(parent, label, el) { const r = document.createElement("div"); r.className = "row"; const l = document.createElement("label"); l.textContent = label; r.appendChild(l); r.appendChild(el); parent.appendChild(r); }
+  function step(value, minus, plus) { const s = document.createElement("div"); s.className = "step"; const a = document.createElement("button"); a.textContent = "−"; a.onclick = () => { minus(); render(); }; const v = document.createElement("span"); v.textContent = value; const b = document.createElement("button"); b.textContent = "+"; b.onclick = () => { plus(); render(); }; s.append(a, v, b); return s; }
+
+  const kit = (location.hash.match(/shirt=([0-9a-fA-F]{6})/) || [])[1]; if (kit) me.shirtColor = col("#" + kit); // #shirt=e0532f (and a check)
+  let preview;
+  function render() {
+    document.getElementById("title").textContent = t("title");
+    document.querySelectorAll(".lang button").forEach(b => b.classList.toggle("on", b.dataset.l === lang));
+    app.innerHTML = ""; thumbs.length = 0;
+    const left = document.createElement("div"); left.className = "card";
+    preview = document.createElement("canvas"); preview.id = "preview"; preview.width = preview.height = 512; left.appendChild(preview);
+    const who = document.createElement("div"); who.className = "who";
+    who.innerHTML = '<div class="name"></div><div class="sub"></div>';
+    who.querySelector(".name").textContent = me.name || "—";
+    who.querySelector(".sub").textContent = (me.nickname ? "“" + me.nickname + "” · " : "") + "#" + me.number;
+    left.appendChild(who);
+    const sex = document.createElement("div"); sex.className = "sex";
+    [["male", false], ["female", true]].forEach(([k, f]) => { const b = document.createElement("button"); b.textContent = t(k); b.className = me.female === f ? "on" : ""; b.onclick = () => setFemale(f); sex.appendChild(b); });
+    left.appendChild(sex);
+    const dl = document.createElement("button"); dl.className = "primary"; dl.textContent = t("download"); dl.onclick = download; left.appendChild(dl);
+    const note = document.createElement("div"); note.className = "note"; note.textContent = t("noteDl"); left.appendChild(note);
+
+    const right = document.createElement("div"); right.className = "card";
+    const tabs = document.createElement("div"); tabs.className = "tabs";
+    ["skin", "eyes", "brows", "nose", "mouth", "hair"].concat(me.female ? [] : ["beard"]).concat(["shirt", "crest", "number", "info"]).forEach(k => {
+      const b = document.createElement("button"); b.textContent = t(k); b.className = tab === k ? "on" : ""; b.onclick = () => { tab = k; render(); }; tabs.appendChild(b); });
+    right.appendChild(tabs);
+    const grid = document.createElement("div"); grid.className = "grid";
+    const skins = me.female ? P.skinsFemale : P.skinsMale, shirts = me.female ? P.shirtsFemale : P.shirtsMale;
+    switch (tab) {
+      case "skin":
+        ["young", "a35", "a50", "a70"].forEach((k, i) => option(grid, c => c.age = i, me.age === i, t(k), AT.face, 1.7));
+        skins.forEach((_, i) => option(grid, c => c.skin = i, me.skin === i, null, AT.face, 1.7)); break;
+      case "eyes": { // your body's eyes first, then the other set under a label
+        eyeSet(me.female).forEach(i => option(grid, c => c.eyes = i, me.eyes === i, null, AT.eyes, 3.6));
+        const more = document.createElement("div"); more.className = "group"; more.textContent = t("moreEyes"); grid.appendChild(more);
+        eyeSet(!me.female).forEach(i => option(grid, c => c.eyes = i, me.eyes === i, null, AT.eyes, 3.6)); break;
+      }
+      case "brows": P.brows.forEach((_, i) => option(grid, c => c.brows = i, me.brows === i, null, AT.brows, 3.6)); break;
+      case "nose": P.noses.forEach((_, i) => option(grid, c => c.nose = i, me.nose === i, null, AT.nose, 4)); break;
+      case "mouth": P.mouths.forEach((_, i) => option(grid, c => c.mouth = i, me.mouth === i, null, AT.mouth, 4)); break;
+      case "hair": {
+        const colours = [...new Set(P.hair.map(h => h.colour))].filter(c => P.hairShades[c]);
+        swatches(right, colours.map(c => P.hairShades[c]), i => colours[i] === me.hairColour, i => setHairColour(colours[i]));
+        const cur = me.hair >= 0 ? P.hair[me.hair].style : -1;
+        option(grid, c => c.hair = -1, cur < 0, t("shaved"), AT.hair, 1.5);
+        styles().forEach(s => option(grid, c => c.hair = hairIndex(s, me.hairColour), cur === s, null, AT.hair, 1.5, !comesIn(s, me.hairColour))); break;
+      }
+      case "beard": ["none", "stubble", "moustache", "goatee", "full"].forEach((k, i) => option(grid, c => c.beard = i - 1, me.beard === i - 1, t(k), AT.mouth, 2.6)); break;
+      case "shirt":
+        swatches(right, P.kitColours, i => hex(me.shirtColor).toLowerCase() === P.kitColours[i].toLowerCase(), i => {
+          me.shirtColor = col(P.kitColours[i]);
+          const light = hsv(me.shirtColor.r * 255, me.shirtColor.g * 255, me.shirtColor.b * 255)[2] > .75 && hsv(me.shirtColor.r * 255, me.shirtColor.g * 255, me.shirtColor.b * 255)[1] < .35;
+          if (light && me.numberStyle === 1) me.numberStyle = 3; if (!light && me.numberStyle === 3) me.numberStyle = 1; });
+        { // the second colour (sleeves, trim, stripes, band): first as drawn, then the kit colours
+          const lab = document.createElement("div"); lab.className = "group"; lab.style.margin = "0 0 8px"; lab.textContent = t("colour2"); right.appendChild(lab);
+          const drawn = (me.female ? P.shirtSecondFemale : P.shirtSecondMale)[me.shirt];
+          const two = me.shirtColor2 && me.shirtColor2.a > 0 ? hex(me.shirtColor2).toLowerCase() : null;
+          swatches(right, [drawn].concat(P.kitColours), i => i === 0 ? !two : two === P.kitColours[i - 1].toLowerCase(),
+            i => me.shirtColor2 = i === 0 ? { r: 0, g: 0, b: 0, a: 0 } : col(P.kitColours[i - 1]));
+        }
+        shirts.forEach((_, i) => option(grid, c => c.shirt = i, me.shirt === i, null, AT.shirt, 1.6)); break;
+      case "crest": option(grid, c => c.crest = -1, me.crest === -1, t("none"), AT.crest, 3.4); P.crests.forEach((_, i) => option(grid, c => c.crest = i, me.crest === i, null, AT.crest, 3.4)); break;
+      case "number": {
+        const box = document.createElement("div");
+        row(box, t("number"), step("#" + me.number, () => me.number = me.number > 1 ? me.number - 1 : 99, () => me.number = me.number < 99 ? me.number + 1 : 1));
+        const sel = document.createElement("select"); [[1, "white"], [2, "gold"], [3, "black"]].forEach(([v, k]) => { const o = document.createElement("option"); o.value = v; o.textContent = t(k); if (me.numberStyle === v) o.selected = true; sel.appendChild(o); });
+        sel.onchange = () => { me.numberStyle = +sel.value; render(); }; row(box, t("style"), sel);
+        right.appendChild(box); break;
+      }
+      case "info": {
+        const box = document.createElement("div");
+        const text = (k, max) => { const i = document.createElement("input"); i.value = me[k] || ""; i.maxLength = max; i.oninput = () => { me[k] = i.value; who.querySelector(".name").textContent = me.name || "—"; }; return i; };
+        row(box, t("name"), text("name", 18)); row(box, t("nickname"), text("nickname", 18));
+        const cs = document.createElement("select"); P.countries.forEach(([code, n]) => { const o = document.createElement("option"); o.value = code; o.textContent = n; if (me.country === code) o.selected = true; cs.appendChild(o); });
+        cs.onchange = () => { me.country = cs.value; }; row(box, t("country"), cs);
+        row(box, t("foot"), step(t(me.leftFooted ? "left" : "right"), () => me.leftFooted = !me.leftFooted, () => me.leftFooted = !me.leftFooted));
+        row(box, t("height"), step((me.heightCm / 100).toFixed(2) + " m", () => me.heightCm = Math.max(150, me.heightCm - 1), () => me.heightCm = Math.min(210, me.heightCm + 1)));
+        row(box, t("weight"), step(me.weightKg + " kg", () => me.weightKg = Math.max(45, me.weightKg - 1), () => me.weightKg = Math.min(120, me.weightKg + 1)));
+        const born = document.createElement("input"); born.type = "date"; born.value = me.birthDate; born.onchange = () => { me.birthDate = born.value; }; row(box, t("born"), born);
+        right.appendChild(box); break;
+      }
+    }
+    if (grid.childElementCount) right.appendChild(grid);
+    app.append(left, right);
+    redraw();
+  }
+  function redraw() { if (preview) paint(preview, me); thumbs.forEach(f => f()); }
+
+  function download() {
+    if (!(me.name || "").trim()) { tab = "info"; render(); alert(t("needName")); return; }
+    const blob = new Blob([JSON.stringify(me, null, 1)], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = (me.name.trim().toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "player") + ".json";
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  document.querySelectorAll(".lang button").forEach(b => b.onclick = () => { lang = b.dataset.l; render(); });
+  render();
+});
+</script>
+</body>
+</html>
